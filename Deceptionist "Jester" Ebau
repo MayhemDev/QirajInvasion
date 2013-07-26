@@ -1,0 +1,380 @@
+
+/*
+
+boss#2 concept 
+
+
+
+rogue boss, blinds random targets, ruptures random targets,applys wound to randoms, and roll the dice every 20% health,
+making him immune to a type of damage type.
+
+When a player dies the rogue will use killing spree
+
+########SPELLS#########
+#serious wound = 5598##
+#killing spree = 57840#
+#blind = 43433#########
+#garrote = 1330########
+#DEADLY THROW = 37074##
+
+########Immune Spells###########
+Damage Immunity arcane = 34304
+Damage Immunity fire = 34305
+Damage Immunity frost = 34306
+Damage Immunity Holy = 34307
+Damage Immunity Nature = 34308
+Damage Immunity Shadow = 34309
+################################
+
+
+
+    SELECT_TARGET_RANDOM = 0,                               //Just selects a random target
+    SELECT_TARGET_TOPAGGRO,                                 //Selects targes from top aggro to bottom
+    SELECT_TARGET_BOTTOMAGGRO,                              //Selects targets from bottom aggro to top
+    SELECT_TARGET_NEAREST,
+    SELECT_TARGET_FARTHEST
+
+
+*/
+#include <ScriptPCH.h>
+
+#define TARGET_FAREST  		SelectTarget(SELECT_TARGET_FARTHEST,0)
+#define TARGET_RANDOM			SelectTarget(SELECT_TARGET_RANDOM,0)
+#define TARGET_HAGGRO			SelectTarget(SELECT_TARGET_TOPAGGRO,0)
+#define TARGET_LAGGRO			SelectTarget(SELECT_TARGET_BOTTOMAGGRO,0)
+
+enum events
+{
+	EVENT_RESET = 3,
+	EVENT_1 = 1,
+	EVENT_2 = 2,
+
+};
+
+
+enum Immunities
+{
+Arcane = 34304,
+Fire = 34305,
+Frost = 34306,
+Holy = 34307,
+Nature = 34308,
+Shadow = 34309,
+};
+
+
+enum Cosmetics //making the boss look like a baller
+{
+	COSM_BERSERK = 76006,
+	COSM_COIL = 54578,
+	COSM_EXPLOSION = 60081,
+};
+
+enum spells
+{
+	SPELL_KICK = 61110,
+	SPELL_THROW = 37074,
+	SPELL_GARROTE = 1330,
+	SPELL_WOUND = 5598,
+	SPELL_SPREE = 57840,
+	SPELL_CLOAK = 65961,
+	SPELL_AMBUSH = 24337,
+	SPELL_BLIND = 43433,
+	SPELL_BERSERK = 72525,
+	SPELL_IMMOLATION = 35959,
+
+};
+
+class RogueBoss : public CreatureScript
+{
+public:
+	RogueBoss() : CreatureScript("RogueBoss") { }
+
+
+	
+
+   
+
+		struct RogueAI : ScriptedAI
+		{
+			RogueAI(Creature * c) : ScriptedAI(c) { } 
+
+			 EventMap events;
+			 uint32 timer_wound,timer_blind,timer_throw,timer_garrote,timer_ambush,timer_rollthedice,timer_kick,timer_berserk,timer_immolation;
+			std::string msg;
+			SessionMap sessionm;
+		
+
+
+			 void Reset()
+        {
+            events.Reset();
+			timer_wound = 4000;
+			timer_garrote = 9000;
+			timer_ambush = 4000;
+			timer_blind = 75000;
+			timer_berserk = 600000;// 6 mins for berserk timer
+			timer_kick = 43000;
+			timer_rollthedice = 60000;
+			timer_immolation = 25000;
+			sessionm = sWorld->GetAllSessions();
+        }
+
+        void EnterCombat(Unit* /*who*/)
+        {
+           
+			me->MonsterYell("YOU FOOLS!",LANG_UNIVERSAL,me->GetGUID());
+           DoCast(COSM_BERSERK);
+		   if(Unit* target = SelectTarget(SELECT_TARGET_RANDOM,0))
+		   me->AddThreat(target,1.0f);
+        }
+
+        void KilledUnit(Unit* /*Killed*/)
+        {
+			if(Unit * target = SelectTarget(SELECT_TARGET_RANDOM,0))
+				DoCast(target,SPELL_SPREE);
+                me->MonsterYell("Feel the pain!", LANG_UNIVERSAL, 0);
+        }
+
+
+		void JustDied(Unit * killrs)
+		{
+			
+					
+					for(SessionMap::const_iterator itr = sessionm.begin();itr !=  sessionm.end();++itr)
+		  {
+			     Player * plyr = itr->second->GetPlayer();
+			     if(me->GetInstanceId() == plyr->GetInstanceId())
+				 plyr->AddItem(44990,3);
+				 ChatHandler(plyr->GetSession()).PSendSysMessage("You receive 3 tokens");
+		  }
+		}
+
+        void UpdateAI(uint32 diff)
+        {
+            if (!UpdateVictim())
+                return;
+			
+			if(timer_immolation <= diff)
+			{
+				DoCast(SPELL_IMMOLATION);
+				if(me->GetHealthPct() <= 25)
+				{
+				timer_immolation = 5000;
+				return;
+				}
+			timer_immolation = me->GetHealth() * 12;
+			} else timer_immolation -= diff;
+
+			if(timer_berserk <= diff)
+			{
+				me->MonsterYell("YOU FOOLS!",LANG_UNIVERSAL,me->GetGUID());
+				me->AddAura(72525,me);
+				DoCast(COSM_BERSERK);
+			}
+
+			if(timer_kick <= diff)
+			{
+				if(Unit * target = TARGET_LAGGRO)
+				{
+					me->AddThreat(target,35.0f);
+					DoCast(target,SPELL_KICK);
+					DoCast(target,COSM_EXPLOSION);
+					timer_kick = 30000;
+				}
+					
+			} else timer_kick -= diff;
+				
+			if(timer_throw <= diff)
+			{
+				if(Unit * target = TARGET_RANDOM)
+				{
+				DoCast(target,SPELL_THROW);
+				DoCast(target,COSM_COIL);
+				}
+				timer_throw = 10000;
+			} else timer_throw -= diff;
+					
+			
+			if(timer_rollthedice <= diff)
+			{
+				msg = "";
+				events.ScheduleEvent(EVENT_1,1000);
+				timer_rollthedice = 60000;
+			} else timer_rollthedice -= diff;
+
+
+
+
+			if(timer_blind <= diff)
+			{
+				if(Unit * target = TARGET_FAREST)
+				{
+					if(!target)
+					{
+					target = TARGET_LAGGRO;
+					}
+
+
+					DoCast(target,SPELL_BLIND);
+				}
+
+
+				timer_blind = 60000;
+			} else timer_blind -= diff;
+
+
+
+			if(timer_ambush <= diff)
+			{
+				Unit * target;
+				
+				if(target = TARGET_HAGGRO)
+					DoCast(target,SPELL_AMBUSH);
+				 
+				
+
+				   if(target->GetHealthPct() <= 25)
+				   {
+		
+					   SessionMap m_session = sWorld->GetAllSessions();
+					Unit * target = TARGET_HAGGRO;
+					for(SessionMap::const_iterator itr = m_session.begin();itr != m_session.end();++itr)
+		  {
+			     Player * plyr = itr->second->GetPlayer();
+			     if(me->GetInstanceId() == plyr->GetInstanceId())
+				 plyr->GetSession()->SendAreaTriggerMessage("%s notice a weakness in %s!",me->GetName().c_str(),target->GetName().c_str());
+			 
+		  }
+
+					 for(int32 i=0;i < 2;++i)
+					 {
+						 DoCast(target,SPELL_AMBUSH);
+						 DoCast(me,SPELL_CLOAK);
+					 }
+					 timer_ambush = 10000;
+
+				   }
+
+				     timer_ambush = 8000;
+
+
+
+			} else timer_ambush -= diff;
+
+
+			if(timer_wound <= diff)
+			{
+				if(Unit * target = TARGET_RANDOM)
+				{
+					if(target->HasAura(SPELL_WOUND) || target->HasAura(SPELL_BLIND))
+						target = SelectTarget(SELECT_TARGET_FARTHEST,0);
+					else
+					DoCast(target,SPELL_WOUND);
+					timer_wound = 7000;
+				}
+			} else timer_wound -= diff;
+         
+
+
+			if(timer_garrote <= diff)
+			{
+			 if(Unit * target = TARGET_RANDOM)
+				 DoCast(target,SPELL_GARROTE);
+
+			  if(me->GetHealthPct() >= 12)
+			  {
+
+				  timer_garrote = me->GetHealthPct() * 410;
+			  }
+			  else
+			  {
+				  timer_garrote = 5500;
+			  }
+
+			} else timer_garrote -= diff;
+
+			
+					switch(events.ExecuteEvent())
+			{
+
+
+			case EVENT_1:
+				me->RemoveAllAuras();
+				msg = "";
+				switch(urand(1,6))
+				{
+		          	case 1:
+						
+						msg += "Arcane";
+						me->AddAura(Arcane,me);
+					break;
+					case 2:
+						msg += "Fire";
+						me->AddAura(Fire,me);
+					break;
+					case 3:
+						msg+= "Frost";
+						me->AddAura(Frost,me);
+					break;
+					case 4:
+						msg+= "Holy";
+						me->AddAura(Holy,me);
+					break;
+					case 5:
+						msg+="Nature";
+						me->AddAura(Nature,me);
+					break;
+					case 6:
+						msg+="Shadow";
+						me->AddAura(Shadow,me);
+				    break;
+					default:
+					break;
+				}
+				
+				
+       for(SessionMap::const_iterator itr = sessionm.begin();itr != sessionm.end();++itr)
+		  {
+			     Player * plyr = itr->second->GetPlayer();
+			     if(me->GetInstanceId() == plyr->GetInstanceId())
+				 plyr->GetSession()->SendAreaTriggerMessage("%s rolls the dice, he is now immune to %s spells!",me->GetName().c_str(),msg.c_str());
+			 
+		  }
+				break;
+
+			default:
+				break;
+           }
+
+		    events.Update(diff);
+            DoMeleeAttackIfReady();
+
+
+
+
+	
+
+     
+
+		}
+			 
+		
+			
+
+		};
+
+CreatureAI* GetAI(Creature* creature) const
+   {
+return new RogueAI(creature);
+   }
+};
+
+
+
+void AddSC_RogueBoss()
+{
+new RogueBoss();
+
+}
+
